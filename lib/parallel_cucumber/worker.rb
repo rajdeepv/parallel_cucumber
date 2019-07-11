@@ -1,6 +1,8 @@
 require 'English'
 require 'timeout'
 require 'tmpdir' # I loathe Ruby.
+require 'yaml/store'
+require_relative 'helper/scenario_store'
 
 module ParallelCucumber
   class Tracker
@@ -151,7 +153,13 @@ module ParallelCucumber
 
         batch_results = test_batch(batch_id, env, running_total, tests)
         begin
-          Hooks.fire_after_batch_hooks(batch_results, batch_id, env)
+          scenario_store = ScenarioStore.new(batch_id)
+          result_details = {}
+          tests.map do |test|
+            result_details[test] = scenario_store.store.transaction(true) {|s| s[test]}
+          end
+          scenario_store.reset_store
+          Hooks.fire_after_batch_hooks(batch_results, batch_id, env, result_details)
         rescue StandardError => e
           trace = e.backtrace.join("\n\t")
           @logger.warn("There was exception in after_batch hook #{e.message} \n #{trace}")
