@@ -33,14 +33,18 @@ module ParallelCucumber
       all_tests = Helper::Cucumber.selected_tests(@options[:cucumber_options], @options[:cucumber_args])
 
       if all_tests.empty?
-        @logger.error('There are no tests to run')
-        exit(1)
+        @logger.info('There is no tests to run, exiting...')
+        exit(0)
       end
 
       count = all_tests.count
 
       long_running_tests = if @options[:long_running_tests]
-                             Helper::Cucumber.selected_tests(@options[:cucumber_options], @options[:long_running_tests])
+                             narrowed_long_running_tests = [
+                               @options[:cucumber_args],
+                               @options[:long_running_tests]
+                             ].join(' ')
+                             Helper::Cucumber.selected_tests(@options[:cucumber_options], narrowed_long_running_tests)
                            else
                              []
                            end
@@ -69,10 +73,17 @@ module ParallelCucumber
 
       number_of_workers = determine_work_and_batch_size(count)
 
-      unrun = []
       status_totals = {}
       total_mm, total_ss = time_it do
         results = run_parallel_workers(number_of_workers) || {}
+
+        begin
+          Hooks.fire_after_workers(results: results, queue: queue)
+        rescue StandardError => e
+          trace = e.backtrace.join("\n\t")
+          @logger.warn("There was exception in after_workers hook #{e.message} \n #{trace}")
+        end
+
         unrun = tests - results.keys
         @logger.error("Tests #{unrun.join(' ')} were not run") unless unrun.empty?
         @logger.error("Queue #{queue.name} is not empty") unless queue.empty?
@@ -100,7 +111,7 @@ module ParallelCucumber
 
       @logger.info("\nTook #{total_mm} minutes #{total_ss} seconds")
 
-      exit((unrun + status_totals[Status::FAILED] + status_totals[Status::UNKNOWN]).empty? ? 0 : 1)
+      exit((tests - status_totals[Status::PASSED] - status_totals[Status::SKIPPED]).empty? ? 0 : 1)
     end
 
     def report_by_group(results)

@@ -25,31 +25,26 @@ module ParallelCucumber
         end
 
         def parse_json_report(json_report)
-          report = JSON.parse(json_report)
-          report.map do |feature|
-            next if feature['elements'].nil?
-            background = {}
-            feature['elements'].map do |scenario|
-              if scenario['type'] == 'background'
-                background = scenario
-                next
-              end
-              steps = [background['steps'], scenario['steps']].flatten.compact
-              status = case # rubocop:disable Style/EmptyCaseCondition
-                       when steps.map { |step| step['result'] }.all? { |result| result['status'] == 'skipped' }
-                         Status::SKIPPED
-                       when steps.map { |step| step['result'] }.any? { |result| result['status'] == 'failed' }
+          report = JSON.parse(json_report, symbolize_names: true)
+          report.map do |scenario, cucumber_status|
+            status = case cucumber_status
+                       when 'failed'
                          Status::FAILED
-                       when steps.map { |step| step['result'] }.all? { |result| result['status'] == 'passed' }
+                       when 'passed'
                          Status::PASSED
-                       when steps.map { |step| step['result'] }.any? { |result| result['status'] == 'undefined' }
+                       when 'pending'
+                         Status::PENDING
+                       when 'skipped'
+                         Status::SKIPPED
+                       when 'undefined'
+                         Status::UNDEFINED
+                       when 'unknown'
                          Status::UNKNOWN
                        else
                          Status::UNKNOWN
-                       end
-              { "#{feature['uri']}:#{scenario['line']}".to_sym => status }
-            end
-          end.flatten.compact.inject(&:merge) || {}
+                     end
+            [scenario, status]
+          end.to_h
         end
 
         private
@@ -58,10 +53,12 @@ module ParallelCucumber
           options = options.dup
           options = expand_profiles(options) unless config_file.nil?
           options = remove_formatters(options)
+          options = remove_dry_run_flag(options)
+          options = remove_strict_flag(options)
           content = nil
 
           Tempfile.open(%w(dry-run .json)) do |f|
-            dry_run_options = "--dry-run --format json --out #{f.path}"
+            dry_run_options = "--dry-run --format ParallelCucumber::Helper::Cucumber::JsonStatusFormatter --out #{f.path}"
 
             cmd = "cucumber #{options} #{dry_run_options} #{args_string}"
             _stdout, stderr, status = Open3.capture3(cmd)
@@ -78,14 +75,22 @@ module ParallelCucumber
         end
 
         def expand_profiles(options, env = {})
-          e = ENV.to_h
-          ENV.replace(e.merge(env))
-          begin
-            config = YAML.load(ERB.new(File.read(config_file)).result)
-            _expand_profiles(options, config)
-          ensure
-            ENV.replace(e)
+          mutex.synchronize do
+            e = ENV.to_h
+            ENV.replace(e.merge(env))
+            begin
+              content = ERB.new(File.read(config_file)).result
+              config  = YAML.safe_load(content)
+              return _expand_profiles(options, config)
+            ensure
+              ENV.replace(e)
+            end
           end
+        end
+
+        # @return Mutex
+        def mutex
+          @mutex ||= Mutex.new
         end
 
         def config_file
@@ -102,7 +107,15 @@ module ParallelCucumber
         end
 
         def remove_formatters(options)
-          options.gsub(/(^|\s)(--format|-f|--out|-o)\s+[\S]+/, '\\1').gsub(/(\s|^)--dry-run\s+/, '\\1')
+          options.gsub(/(^|\s)(--format|-f|--out|-o)\s+[\S]+/, ' ')
+        end
+
+        def remove_dry_run_flag(options)
+          options.gsub(/(^|\s)--dry-run(\s|$)/, ' ')
+        end
+
+        def remove_strict_flag(options)
+          options.gsub(/(^|\s)(--strict|-S)(\s|$)/, ' ')
         end
       end
     end
