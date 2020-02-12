@@ -122,8 +122,8 @@ module ParallelCucumber
           @logger.debug("Loop took #{loop_mm} minutes #{loop_ss} seconds")
           @logger.update_into(@stdout_logger)
         rescue StandardError => e
-          trace = e.backtrace.join("\n\t").sub("\n\t", ": #{$ERROR_INFO}#{e.class ? " (#{e.class})" : ''}\n\t")
-          @logger.error("Threw: #{e.inspect} #{trace}")
+          # trace = e.backtrace.join("\n\t").sub("\n\t", ": #{$ERROR_INFO}#{e.class ? " (#{e.class})" : ''}\n\t")
+          # @logger.error("Threw: #{e.inspect} #{trace}")
         ensure
           results[":worker-#{@index}"] = running_total
           teardown(env)
@@ -171,7 +171,7 @@ module ParallelCucumber
             env, 'precheck', @pre_check, @logger, @log_decoration, timeout: @precheck_timeout, capture: true
         )
       rescue
-        @logger.error('Pre-check failed: quitting immediately')
+        # @logger.error('Pre-check failed: quitting immediately')
         raise 'Pre-check failed: quitting immediately'
       end
     end

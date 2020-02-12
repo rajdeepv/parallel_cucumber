@@ -65,7 +65,7 @@ module ParallelCucumber
           rescue => e
             logger.debug("Exception #{pstat ? pstat[:pid] : "pstat=#{pstat}=nil"}")
             trace = e.backtrace.join("\n\t").sub("\n\t", ": #{$ERROR_INFO}#{e.class ? " (#{e.class})" : ''}\n\t")
-            logger.error("Threw for #{full_script}, caused #{trace}")
+            # logger.error("Threw for #{full_script}, caused #{trace}")
 
             exception = e
           ensure
