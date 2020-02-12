@@ -41,10 +41,10 @@ module ParallelCucumber
     end
 
     def autoshutting_file
-      file_handle = { log_file: @log_file }
+      file_handle = {log_file: @log_file}
 
       def file_handle.write(message)
-        File.open(self[:log_file], 'a') { |f| f << message }
+        File.open(self[:log_file], 'a') {|f| f << message}
       rescue => e
         STDERR.puts "Log failure: #{e} writing '#{message.to_s.chomp}' to #{self[:log_file]}"
       end
@@ -84,7 +84,7 @@ module ParallelCucumber
         end
 
         @logger.debug(<<-LOG)
-        Additional environment variables: #{env.map { |k, v| "#{k}=#{v}" }.join(' ')}
+        Additional environment variables: #{env.map {|k, v| "#{k}=#{v}"}.join(' ')}
         LOG
         @logger.update_into(@stdout_logger)
 
@@ -98,21 +98,24 @@ module ParallelCucumber
             loop do
               job = @jobs_queue.pop(false)
               case job.type
-              when Job::PRECHECK
-                precmd = precheck(env)
-                if (m = precmd.match(/precmd:retry-after-(\d+)-seconds/))
+                when Job::PRECHECK
+                  @logger << "\n"
+                  precmd = precheck(env)
+                  if (m = precmd.match(/precmd:retry-after-(\d+)-seconds/))
+                    @manager.inform_idle(@name)
+                    sleep(1 + m[1].to_i)
+                    next
+                  end
+                  @manager.inform_healthy(@name)
+                when Job::RUN_TESTS
+                  @logger << "\n"
+                  @logger << "\n"
+                  run_batch(env, results, running_total, job.details)
                   @manager.inform_idle(@name)
-                  sleep(1 + m[1].to_i)
-                  next
-                end
-                @manager.inform_healthy(@name)
-              when Job::RUN_TESTS
-                run_batch(env, results, running_total, job.details)
-                @manager.inform_idle(@name)
-              when Job::DIE
-                break
-              else
-                raise("Invalid job #{job.inspect}")
+                when Job::DIE
+                  break
+                else
+                  raise("Invalid job #{job.inspect}")
               end
             end
           end
@@ -165,7 +168,7 @@ module ParallelCucumber
       return 'default no-op pre_check' unless @pre_check
       begin
         return Helper::Command.exec_command(
-          env, 'precheck', @pre_check, @logger, @log_decoration, timeout: @precheck_timeout, capture: true
+            env, 'precheck', @pre_check, @logger, @log_decoration, timeout: @precheck_timeout, capture: true
         )
       rescue
         @logger.error('Pre-check failed: quitting immediately')
@@ -176,7 +179,7 @@ module ParallelCucumber
     def running_totals(batch_results, running_total)
       batch_info = Status.constants.map do |status|
         status = Status.const_get(status)
-        [status, batch_results.select { |_t, s| s == status }.keys]
+        [status, batch_results.select {|_t, s| s == status}.keys]
       end.to_h
       batch_info.each do |s, tt|
         @logger.info("#{s.to_s.upcase} #{tt.count} tests: #{tt.join(' ')}") unless tt.empty?
@@ -191,8 +194,8 @@ module ParallelCucumber
       test_syms = tests.map(&:to_sym)
       unrun = test_syms - batch_keys
       surfeit = batch_keys - test_syms
-      unrun.each { |test| batch_results[test] = Status::UNKNOWN }
-      surfeit.each { |test| batch_results.delete(test) }
+      unrun.each {|test| batch_results[test] = Status::UNKNOWN}
+      surfeit.each {|test| batch_results.delete(test)}
       @logger.error("Did not run #{unrun.count}/#{tests.count}: #{unrun.join(' ')}") unless unrun.empty?
       @logger.error("Extraneous runs (#{surfeit.count}): #{surfeit.join(' ')}") unless surfeit.empty?
       return if surfeit.empty?
@@ -210,17 +213,17 @@ module ParallelCucumber
       test_state = "#{test_batch_dir}/test_state.json"
       cmd = "#{@test_command} --format ParallelCucumber::Helper::Cucumber::JsonStatusFormatter --out #{test_state} #{@cucumber_options} "
       batch_env = {
-        :TEST_BATCH_ID.to_s => batch_id,
-        :TEST_BATCH_DIR.to_s => test_batch_dir,
-        :BATCH_NUMBER.to_s => running_total[:batches].to_s
+          :TEST_BATCH_ID.to_s => batch_id,
+          :TEST_BATCH_DIR.to_s => test_batch_dir,
+          :BATCH_NUMBER.to_s => running_total[:batches].to_s
       }.merge(env)
       mapped_batch_cmd, file_map = Helper::Cucumber.batch_mapped_files(cmd, test_batch_dir, batch_env)
-      file_map.each { |_user, worker| FileUtils.mkpath(worker) if worker =~ %r{\/$} }
+      file_map.each {|_user, worker| FileUtils.mkpath(worker) if worker =~ %r{\/$}}
       mapped_batch_cmd += ' ' + tests.join(' ')
       begin
         ParallelCucumber::Helper::Command.exec_command(
-          batch_env, 'batch', mapped_batch_cmd, @logger, @log_decoration,
-          timeout: @batch_timeout, return_script_error: true
+            batch_env, 'batch', mapped_batch_cmd, @logger, @log_decoration,
+            timeout: @batch_timeout, return_script_error: true
         )
       rescue => e
         @logger << "ERROR #{e} #{e.backtrace.first(5)}"
@@ -232,7 +235,7 @@ module ParallelCucumber
           @logger.warn("There was exception in on_batch_error hook #{exc.message} \n #{trace}")
         end
 
-        return tests.map { |t| [t, ::ParallelCucumber::Status::UNKNOWN] }.to_h
+        return tests.map {|t| [t, ::ParallelCucumber::Status::UNKNOWN]}.to_h
       end
       parse_results(test_state, tests)
     ensure
@@ -242,14 +245,14 @@ module ParallelCucumber
           next if worker == user
           Helper::Processes.cp_rv(worker, user, @logger)
         end
-        @logger << "\nCopied files in map: #{file_map.first(5)}...#{file_map.count}  #{Time.now}\n"
+        # @logger << "\nCopied files in map: #{file_map.first(5)}...#{file_map.count}  #{Time.now}\n"
         # Copy everything else too, in case it's interesting.
         Helper::Processes.cp_rv("#{test_batch_dir}/*", @log_dir, @logger)
-        @logger << "\nCopied everything else #{Time.now}  #{Time.now}\n"
+        # @logger << "\nCopied everything else #{Time.now}  #{Time.now}\n"
       end
       @logger.update_into(@stdout_logger)
       FileUtils.rm_rf(test_batch_dir)
-      @logger << "\nRemoved all files  #{Time.now}\n" # Tracking down 30 minute pause!
+      # @logger << "\nRemoved all files  #{Time.now}\n" # Tracking down 30 minute pause!
       @logger.update_into(@stdout_logger)
     end
 
@@ -260,7 +263,7 @@ module ParallelCucumber
 
         begin
           Helper::Command.exec_command(
-            env, 'teardown', @teardown_worker, @logger, @log_decoration, timeout: @setup_timeout
+              env, 'teardown', @teardown_worker, @logger, @log_decoration, timeout: @setup_timeout
           )
         rescue
           @logger.warn('Teardown finished with error')
@@ -291,18 +294,18 @@ module ParallelCucumber
     def parse_results(f, tests)
       unless File.file?(f)
         @logger.error("Results file does not exist: #{f}")
-        return tests.map { |t| [t, ::ParallelCucumber::Status::UNKNOWN] }.to_h
+        return tests.map {|t| [t, ::ParallelCucumber::Status::UNKNOWN]}.to_h
       end
       json_report = File.read(f)
       if json_report.empty?
         @logger.error("Results file is empty: #{f}")
-        return tests.map { |t| [t, ::ParallelCucumber::Status::UNKNOWN] }.to_h
+        return tests.map {|t| [t, ::ParallelCucumber::Status::UNKNOWN]}.to_h
       end
       Helper::Cucumber.parse_json_report(json_report)
     rescue => e
       trace = e.backtrace.join("\n\t").sub("\n\t", ": #{$ERROR_INFO}#{e.class ? " (#{e.class})" : ''}\n\t")
       @logger.error("Threw: JSON parse of results caused #{trace}")
-      tests.map { |t| [t, ::ParallelCucumber::Status::UNKNOWN] }.to_h
+      tests.map {|t| [t, ::ParallelCucumber::Status::UNKNOWN]}.to_h
     end
   end
 end
